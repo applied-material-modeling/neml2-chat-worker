@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "neml2-chat",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-01",
+  "ai": {
+    "binding": "AI"
+  },
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "neml2-docs"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "EMBED_MODEL": "@cf/baai/bge-base-en-v1.5",
+    "TOP_K": "6",
+    "MAX_HISTORY": "8",
+    "GATEWAY_ID": "neml2-docs",
+    "ALLOWED_ORIGINS": "https://applied-material-modeling.github.io,http://localhost:8000,http://127.0.0.1:8000"
+  }
+}
