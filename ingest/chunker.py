@@ -28,6 +28,11 @@ Splits a markdown document into chunks bounded by ## / ### headings, then
 applies a sliding window to any section that exceeds the target token budget.
 Each chunk carries its enclosing heading hierarchy (so the embedding has
 context) plus the explicit `{#anchor}` if present.
+
+Optional `breadcrumb` lifts retrieval substantially: prepending e.g.
+`Guides and Tutorials > Extension` to every chunk in
+`tutorials/extension/...` makes the conceptual category visible to both
+the embedding and the LLM, instead of only the page-local heading path.
 """
 
 from __future__ import annotations
@@ -86,26 +91,33 @@ def _split_long(
 def chunk_markdown(
     body: str,
     page_title: str,
+    breadcrumb: list[str] | None = None,
     target_tokens: int = 512,
     overlap_tokens: int = 50,
     min_tokens: int = 16,
 ) -> list[Chunk]:
     """Chunk markdown by ## / ### headings with sliding-window fallback.
 
-    The H1 (page title) becomes the root of every chunk's heading_path; H2/H3
-    open new chunks. H4+ stays inside the parent chunk.
+    The chunk's `heading_path` is `breadcrumb + [page_title, ?h2, ?h3]`. H2
+    opens a new chunk reset to `breadcrumb + [page_title, h2]`; H3 nests under
+    its enclosing H2 (`breadcrumb + [page_title, h2, h3]`). H4+ stays inside
+    the parent chunk.
     """
+    crumb = list(breadcrumb) if breadcrumb else []
+    base_path = crumb + [page_title]
+
     lines = body.splitlines(keepends=True)
-    sections: list[tuple[list[str], str, str | None, list[str]]] = []
-    current_path = [page_title]
+    sections: list[tuple[list[str], str, str | None, str]] = []
+    current_path = list(base_path)
     current_heading = page_title
     current_anchor: str | None = None
     current_lines: list[str] = []
+    last_h2_title: str | None = None
 
     def flush() -> None:
         text = "".join(current_lines).strip()
         if text:
-            sections.append((list(current_path), current_heading, current_anchor, [text]))
+            sections.append((list(current_path), current_heading, current_anchor, text))
 
     for line in lines:
         m = _HEADING_RE.match(line.rstrip("\n"))
@@ -113,17 +125,20 @@ def chunk_markdown(
             level = len(m.group(1))
             title = m.group(2).strip()
             anchor = m.group(3)
-            if level in (2, 3):
+            if level == 2:
                 flush()
                 current_lines = []
-                current_path = [page_title]
-                if level == 3 and len(sections) > 0:
-                    last_h2 = next(
-                        (s[1] for s in reversed(sections) if len(s[0]) == 2),
-                        None,
-                    )
-                    if last_h2:
-                        current_path.append(last_h2)
+                current_path = base_path + [title]
+                current_heading = title
+                current_anchor = anchor
+                last_h2_title = title
+                continue
+            if level == 3:
+                flush()
+                current_lines = []
+                current_path = list(base_path)
+                if last_h2_title:
+                    current_path.append(last_h2_title)
                 current_path.append(title)
                 current_heading = title
                 current_anchor = anchor
@@ -133,8 +148,7 @@ def chunk_markdown(
     flush()
 
     chunks: list[Chunk] = []
-    for path, heading, anchor, parts in sections:
-        body_text = "\n".join(parts).strip()
+    for path, heading, anchor, body_text in sections:
         if not body_text:
             continue
         prefixed = f"{' > '.join(path)}\n\n{body_text}"

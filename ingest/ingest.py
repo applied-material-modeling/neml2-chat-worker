@@ -54,6 +54,7 @@ import httpx
 from loguru import logger
 
 from chunker import chunk_markdown
+from navindex import Navindex
 from url_for import page_ref_and_title, url_for
 
 INDEX_NAME = "neml2-docs"
@@ -90,7 +91,7 @@ def slugify_heading(heading: str) -> str:
     return "".join(out).strip("-")
 
 
-def discover_chunks(build_dir: Path) -> list[Vector]:
+def discover_chunks(build_dir: Path, navindex: Navindex) -> list[Vector]:
     content_dir = build_dir / "content"
     if not content_dir.is_dir():
         logger.error("preprocessed content dir missing: {}", content_dir)
@@ -107,7 +108,8 @@ def discover_chunks(build_dir: Path) -> list[Vector]:
             continue
         with open(md, "r") as f:
             body = f.read()
-        chunks = chunk_markdown(body, title)
+        breadcrumb = navindex.breadcrumb(ref)
+        chunks = chunk_markdown(body, title, breadcrumb=breadcrumb)
         if not chunks:
             logger.debug("skip (no chunks): {}", rel)
             continue
@@ -246,6 +248,15 @@ def main() -> None:
         help="path to a neml2 doc build (must contain content/ "
         "produced by doc/scripts/genhtml.py)",
     )
+    parser.add_argument(
+        "--doxygen-layout",
+        default=None,
+        help="path to neml2's DoxygenLayout.xml. When provided, the ancestor "
+        "titles from the navindex are prepended to each chunk's heading path, "
+        "which materially improves retrieval for conceptual queries (e.g. a "
+        "page under 'Guides and Tutorials > Extension' is then identifiable "
+        "as such even when the page-local headings don't contain the word).",
+    )
     parser.add_argument("--batch-size", type=int, default=50)
     parser.add_argument(
         "--dry-run", action="store_true", help="chunk + report without embedding/upserting"
@@ -257,8 +268,17 @@ def main() -> None:
     logger.add(sys.stderr, level=args.log_level.upper())
 
     build_dir = Path(args.build_dir).resolve()
+    layout_path = Path(args.doxygen_layout).resolve() if args.doxygen_layout else None
+    if layout_path is not None and not layout_path.is_file():
+        logger.error("--doxygen-layout file not found: {}", layout_path)
+        sys.exit(2)
+    navindex = Navindex(layout_path)
+    if layout_path is not None:
+        logger.info("loaded {} navindex entry/entries from {}", len(navindex), layout_path)
+    else:
+        logger.info("no --doxygen-layout supplied; chunks will lack navindex breadcrumbs")
 
-    vectors = discover_chunks(build_dir)
+    vectors = discover_chunks(build_dir, navindex)
     logger.info(
         "discovered {} chunk(s) across {} pages",
         len(vectors),

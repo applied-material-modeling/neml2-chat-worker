@@ -8,15 +8,19 @@ For a no-network sanity check on chunking behavior, against an existing built ne
 
 ```
 pip install -r ingest/requirements.txt
-./ingest/ingest.py --build-dir /path/to/neml2/build/doc --dry-run
+./ingest/ingest.py \
+  --build-dir /path/to/neml2/build/doc \
+  --doxygen-layout /path/to/neml2/doc/config/DoxygenLayout.xml \
+  --dry-run
 ```
 
-`--build-dir` is required and points at the neml2 doc-build root (the directory that contains `content/` after `genhtml.py` ran).
+`--build-dir` is required and points at the neml2 doc-build root (the directory that contains `content/` after `genhtml.py` ran). `--doxygen-layout` is optional but strongly recommended — without it, chunks lack the navindex breadcrumb that makes a page like `tutorials/extension/connection-to-input-files.md` retrievable for queries like "how do I create a new Model class".
 
 ## Implementation
 
 - **Idempotency.** Stable IDs are `sha1(source_path#anchor#chunk_idx)`. State of which IDs were last upserted is stored in `<build-dir>/.chatbot-vector-ids.json`; on re-ingest, any vector whose ID is no longer produced gets deleted from Vectorize.
 - **Chunking** lives in `chunker.py`. Target is ~512 tokens per chunk with a 50-token sliding-window overlap on long sections; the page title is prepended to every chunk so the embedding has page context.
+- **Navindex breadcrumb.** When `--doxygen-layout` is supplied, `navindex.py` parses the XML and resolves each page's chain of ancestor titles. The chunker prepends those to `heading_path`, so a chunk under `tutorials/extension/connection-to-input-files.md` reads `Guides and Tutorials > Extension > Connection to Input Files > <local heading>`. Both the embedding and the LLM see the conceptual category that the page-local headings often omit.
 - **URL mapping.** `url_for.py` extracts the `ref` from the first heading's `{#ref}` anchor and builds `<base>/<ref>.html[#<sub-anchor>]`. The neml2 preprocess pipeline guarantees every preprocessed page begins with `# Title {#ref}`. If a Doxygen slug convention change ever breaks this, fix it here.
 - **Batching.** `--batch-size N` controls both the embedding-call batch size and the Vectorize upsert batch size. Default 50 balances Workers AI throughput against per-call neuron cost.
 

@@ -63,7 +63,10 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: ./ingest/ingest.py --build-dir neml2/build/doc
+        run: |
+          ./ingest/ingest.py \
+            --build-dir neml2/build/doc \
+            --doxygen-layout neml2/doc/config/DoxygenLayout.xml
 
       - name: Health-check the deployed worker
         run: |
