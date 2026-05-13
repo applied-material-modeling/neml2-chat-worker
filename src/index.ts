@@ -54,6 +54,7 @@ interface Env {
   TOP_K: string;
   MAX_HISTORY: string;
   HYDE: string;
+  TEMPERATURE: string;
   GATEWAY_ID?: string;
   ALLOWED_ORIGINS: string;
 }
@@ -190,6 +191,11 @@ async function handleChat(request: Request, env: Env, origin: string): Promise<R
  * Parse one upstream SSE line into a token string, or null if the line is
  * non-content (blank line, [DONE] marker, or malformed). Workers AI follows
  * OpenAI's convention: `data: {"response":"...token text..."}`.
+ *
+ * `response` is *almost* always a string, but for single-character numeric
+ * tokens we've observed the upstream JSON-encode it as a number (e.g.
+ * `{"response":1}`). Coerce to string so digit-only citation markers like
+ * `[1]` don't lose their digit and render as `[]` on the page.
  */
 function parseUpstreamLine(line: string): string | null {
   const trimmed = line.trim();
@@ -197,8 +203,12 @@ function parseUpstreamLine(line: string): string | null {
   const payload = trimmed.slice("data:".length).trim();
   if (!payload || payload === "[DONE]") return null;
   try {
-    const obj = JSON.parse(payload) as { response?: string };
-    return typeof obj.response === "string" && obj.response.length > 0 ? obj.response : null;
+    const obj = JSON.parse(payload) as { response?: unknown };
+    const r = obj.response;
+    if (r === null || r === undefined) return null;
+    if (typeof r === "string") return r.length > 0 ? r : null;
+    if (typeof r === "number" || typeof r === "boolean") return String(r);
+    return null;
   } catch {
     return null;
   }

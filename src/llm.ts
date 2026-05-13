@@ -36,6 +36,7 @@
 interface Env {
   AI: Ai;
   MODEL: string;
+  TEMPERATURE: string;
   GATEWAY_ID?: string;
 }
 
@@ -49,6 +50,11 @@ export interface ChatMessage {
  * Kick off a streaming completion. The returned stream is the upstream
  * Workers AI SSE byte stream; index.ts re-emits its tokens as the worker's
  * own SSE wire format.
+ *
+ * Temperature is intentionally low (env-tunable, default 0.2): RAG answers
+ * should stick to the supplied context and quote class/method names verbatim.
+ * High temperatures encourage the model to invent plausible-but-wrong API
+ * surface, which is the dominant failure mode here.
  */
 export async function streamCompletion(
   env: Env,
@@ -57,9 +63,15 @@ export async function streamCompletion(
   // GATEWAY_ID, when set, routes the call through AI Gateway for caching +
   // observability. Without it the call goes straight to Workers AI.
   const options = env.GATEWAY_ID ? { gateway: { id: env.GATEWAY_ID } } : undefined;
+  const temperature = Number.parseFloat(env.TEMPERATURE);
   const result = await env.AI.run(
     env.MODEL as keyof AiModels,
-    { messages, stream: true, max_tokens: 1024 },
+    {
+      messages,
+      stream: true,
+      max_tokens: 1024,
+      temperature: Number.isFinite(temperature) ? temperature : 0.2,
+    },
     options
   );
   return result as ReadableStream<Uint8Array>;
