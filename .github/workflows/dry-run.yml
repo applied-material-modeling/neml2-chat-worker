@@ -1,0 +1,28 @@
+name: Ingest dry-run
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ingest/**"
+      - "tests/fixtures/**"
+      - ".github/workflows/dry-run.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ingest/requirements.txt
+      - name: Install ingest dependencies
+        run: pip install -r ingest/requirements.txt
+      - name: Run ingest dry-run against fixture
+        run: ./ingest/ingest.py --build-dir tests/fixtures/sample-content --dry-run

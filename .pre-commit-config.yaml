@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 25.11.0
+    hooks:
+      - id: black
+        files: ^ingest/.*\.py$
+        args: [--line-length=100]
+  - repo: local
+    hooks:
+      - id: check-copyright
+        name: check copyright headers
+        entry: scripts/check_copyright.py --modify
+        language: script
+        pass_filenames: true
+        files: \.(py|sh|js|ts)$
+      - id: worker-typecheck
+        name: chatbot worker typecheck (wrangler types + tsc)
+        entry: scripts/typecheck.sh
+        language: script
+        pass_filenames: false
+        files: ^(src/.*\.ts|wrangler\.jsonc|tsconfig\.json|package(-lock)?\.json)$

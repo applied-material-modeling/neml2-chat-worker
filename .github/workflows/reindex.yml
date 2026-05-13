@@ -1,0 +1,77 @@
+name: Reindex Vectorize
+
+on:
+  schedule:
+    # Weekly on Monday 09:00 UTC. Adjust the cadence as the docs evolve.
+    - cron: "0 9 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "ingest/**"
+      - ".github/workflows/reindex.yml"
+  workflow_dispatch:
+
+concurrency:
+  # Only one reindex at a time; queue subsequent runs (don't drop them).
+  group: reindex
+  cancel-in-progress: false
+
+jobs:
+  reindex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Checkout neml2 (for the doc build)
+        uses: actions/checkout@v4
+        with:
+          repository: applied-material-modeling/neml2
+          path: neml2
+          submodules: recursive
+
+      - name: Set up the neml2 toolchain (python, cmake, torch, doxygen)
+        uses: applied-material-modeling/neml2-ci@main
+        with:
+          # Mirror neml2's docs.yml versions; bump alongside that file.
+          python-version: 3.9
+          cmake-version: 3.26.1
+          torch-version: 2.8.0
+          doxygen-version: 1.16.1
+
+      - name: Install graphviz (required by genhtml.py)
+        run: sudo apt-get install -y graphviz
+
+      - name: Install neml2 + generate stubs
+        working-directory: neml2
+        run: |
+          pip install ".[dev]" -v
+          neml2-stub
+
+      - name: Build neml2 docs (preprocessed markdown ends up in build/doc/content/)
+        working-directory: neml2
+        run: |
+          ./doc/scripts/examples.py --log-level trace --cmake-configure-args="-GNinja"
+          ./doc/scripts/genhtml.py --log-level trace
+
+      - name: Install ingest dependencies
+        run: pip install -r ingest/requirements.txt
+
+      - name: Run ingest against the freshly-built neml2 docs
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: ./ingest/ingest.py --build-dir neml2/build/doc
+
+      - name: Health-check the deployed worker
+        run: |
+          # Probe a known-stable doc question to confirm the index has content.
+          curl -fsSL -X POST https://neml2-chat.hugary1995.workers.dev/chat \
+            -H 'content-type: application/json' \
+            -H 'origin: https://applied-material-modeling.github.io' \
+            -d '{"messages":[{"role":"user","content":"How do I add a new Model class?"}]}' \
+            -o /tmp/healthcheck.txt
+          if ! grep -q '"type":"token"' /tmp/healthcheck.txt; then
+            echo "::error::worker returned no tokens after reindex" && exit 1
+          fi

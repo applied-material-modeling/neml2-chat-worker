@@ -1,5 +1,7 @@
 # neml2-chat-worker
 
+> **Notice — not a standalone project.** This repository is a *component* of the [NEML2 project](https://github.com/applied-material-modeling/neml2) and only has meaning in that context. Public-release approval was granted for NEML2 as a whole; the code here was extracted into a separate repository for operational reasons (it runs on Cloudflare and uses a different toolchain than the rest of NEML2), not because it is an independent work. Please use, fork, cite, and report issues against this repository as part of NEML2 — not on its own.
+
 Cloudflare Worker that powers the "Ask AI" page on the [NEML2 documentation site](https://applied-material-modeling.github.io/neml2). It performs retrieval against a Vectorize index of NEML2's docs and streams an LLM response back via SSE.
 
 ```
@@ -10,28 +12,22 @@ THIS WORKER  ─►  Vectorize    (top-k retrieval, 768-dim cosine; populated by
             └─►  Workers AI   (embed query + stream LLM tokens, optionally via AI Gateway)
 ```
 
-The browser UI (`chat.js`/`chat.css`) and the index population step (`ingest/`) live in the [neml2 repo](https://github.com/applied-material-modeling/neml2) under `doc/chatbot/` — they're tied to NEML2's documentation structure. This repo is the part that runs on Cloudflare and is owned by the NEML2 maintainers.
+This repo owns the entire backend of the chatbot: the runtime worker (`src/`) and the indexer that populates Vectorize (`ingest/`). The browser UI (`chat.js`/`chat.css`) lives in the [neml2 repo](https://github.com/applied-material-modeling/neml2) under `doc/chatbot/page/` because it's bundled into the Doxygen build. This split keeps all credentialed work and Cloudflare-specific machinery here, and all doc-build wiring there.
 
-For first-time setup of the Cloudflare account, Vectorize index, API tokens, AI Gateway, and the initial deploy, see [BRING-UP.md](BRING-UP.md).
+For first-time setup of the Cloudflare account, Vectorize index, API tokens, AI Gateway, and the routine deploy + reindex procedures, see [BRING-UP.md](BRING-UP.md).
 
 ## Integration contract with the neml2 repo
 
-The worker depends on three shared assumptions that must hold across both repos. Any change to these requires coordinated PRs.
+Two assumptions must hold across both repos. Any change to either requires coordinated PRs.
 
-**Embedding model + dimensions.** The query embedding here MUST match the chunk embeddings written by the neml2 ingest job:
-- Model: `@cf/baai/bge-base-en-v1.5`
-- Dimensions: 768 (Vectorize index created with `--dimensions=768 --metric=cosine`)
-
-Set in `wrangler.jsonc` (`EMBED_MODEL`) and in neml2's `doc/chatbot/ingest/ingest.py` (`EMBED_MODEL`, `EMBED_DIMS`).
-
-**Vectorize record metadata.** The worker reads these keys from each match's metadata; the neml2 ingest writes them:
+**Vectorize record metadata.** The worker reads these keys from each match's metadata; the ingest job in this repo writes them. The page in the neml2 repo consumes the `n,url,title,ref` shape on the `event: sources` line and renders citation links from it.
 - `text` — the chunk's raw text (string).
 - `url` — fully-qualified citation URL (string).
 - `title` — page title (string, used in the prompt and citation footer).
 - `ref` — Doxygen page ref slug (string).
 - `anchor` — sub-heading anchor (string, may be empty).
 
-Renaming any of these silently empties the model's context. The Vectorize index name is `neml2-docs` on both sides.
+Renaming any silently empties the model's context. The Vectorize index name is `neml2-docs`; embedding model is `@cf/baai/bge-base-en-v1.5` (768 dim, cosine).
 
 **Wire format on `POST /chat`** (browser ↔ worker, served as SSE):
 - One `data: {"type":"token","text":"..."}` event per LLM token.
@@ -39,7 +35,15 @@ Renaming any of these silently empties the model's context. The Vectorize index 
 - Then `event: done\ndata: {}` as the terminator.
 - `event: error\ndata: {"message":"..."}` on stream failure.
 
-The page's `chat.js` consumes this; changing the format here breaks the page. The CORS allowlist (`ALLOWED_ORIGINS` in `wrangler.jsonc`) must include the deployed doc origin (`https://applied-material-modeling.github.io`) and any local-dev origin contributors will use.
+The neml2 repo's `doc/chatbot/page/chat.js` consumes this format; changes here break the page. The worker's CORS allowlist (`ALLOWED_ORIGINS` in `wrangler.jsonc`) must include the deployed doc origin (`https://applied-material-modeling.github.io`) and any local-dev origin contributors will use.
+
+## What lives where
+
+- `src/*.ts` — Cloudflare Worker (TypeScript). `POST /chat` (SSE), `OPTIONS /chat` (CORS), `GET /healthz`.
+- `ingest/*.py` — Python indexer; reads a built neml2 doc tree and pushes chunks to Vectorize.
+- `scripts/typecheck.sh` — `wrangler types` + `tsc --noEmit`.
+- `package.json`, `package-lock.json`, `tsconfig.json`, `wrangler.jsonc` — worker tooling.
+- `ingest/requirements.txt` — Python deps for the indexer.
 
 ## Working on the worker
 

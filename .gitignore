@@ -3,3 +3,9 @@ node_modules/
 worker-configuration.d.ts
 .dev.vars
 .DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.chatbot-vector-ids.json
