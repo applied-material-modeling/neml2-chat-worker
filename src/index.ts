@@ -53,6 +53,7 @@ interface Env {
   EMBED_MODEL: string;
   TOP_K: string;
   MAX_HISTORY: string;
+  HYDE: string;
   GATEWAY_ID?: string;
   ALLOWED_ORIGINS: string;
 }
