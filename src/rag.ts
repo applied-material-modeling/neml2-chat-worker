@@ -57,9 +57,27 @@ interface Env {
   GATEWAY_ID?: string;
 }
 
-const HYDE_SYSTEM_PROMPT = `You are a NEML2 documentation expert. Given a user question, draft a brief (2-3 sentences max) plausible answer using terminology that would actually appear in the NEML2 docs (specific class names like \`Model\`, method names like \`set_value\`, macros like \`register_NEML2_object\`, file types like input file). Do not hedge, do not refuse, do not include disclaimers — this draft is only used to improve document retrieval and is not shown to the user. If you don't know specifics, use plausible-sounding NEML2 vocabulary.`;
+/**
+ * Sentinel the HyDE prompt uses to mark a query as out of NEML2's scope.
+ * Picked to be unlikely to appear in any legitimate NEML2 hypothetical so
+ * that startsWith() detection has no false positives.
+ */
+const OFFTOPIC_MARKER = "OFFTOPIC";
 
-async function hydeExpand(env: Env, query: string): Promise<string> {
+const HYDE_SYSTEM_PROMPT = `You are a NEML2 documentation expert. NEML2 is a C++17 material modeling library that vectorizes constitutive model evaluation on CPU/GPU using LibTorch.
+
+If the user's question is clearly outside NEML2's scope — general knowledge ("what's the weather"), small talk ("tell me a joke"), unrelated software (PyTorch installation help, Excel formulas), or anything that has nothing to do with material modeling, NEML2's API, building/installing NEML2, or NEML2 input files — respond with exactly the literal string ${OFFTOPIC_MARKER} and nothing else.
+
+Otherwise, draft a brief (2-3 sentences max) plausible answer using terminology that would actually appear in the NEML2 docs (specific class names like \`Model\`, method names like \`set_value\`, macros like \`register_NEML2_object\`, file types like input file). Do not hedge, do not refuse, do not include disclaimers — this draft is only used to improve document retrieval and is not shown to the user. If you don't know specifics, use plausible-sounding NEML2 vocabulary.
+
+Bias toward expanding rather than refusing: only mark ${OFFTOPIC_MARKER} when the query is unmistakably outside NEML2's domain. The downstream answer LLM will catch borderline cases.`;
+
+interface HydeResult {
+  hypothetical: string;
+  offtopic: boolean;
+}
+
+async function hydeExpand(env: Env, query: string): Promise<HydeResult> {
   const options = env.GATEWAY_ID ? { gateway: { id: env.GATEWAY_ID } } : undefined;
   try {
     const result = (await env.AI.run(
@@ -74,11 +92,15 @@ async function hydeExpand(env: Env, query: string): Promise<string> {
       },
       options
     )) as { response?: string };
-    return typeof result.response === "string" ? result.response.trim() : "";
+    const text = typeof result.response === "string" ? result.response.trim() : "";
+    if (text.startsWith(OFFTOPIC_MARKER)) {
+      return { hypothetical: "", offtopic: true };
+    }
+    return { hypothetical: text, offtopic: false };
   } catch {
     // Don't fail the whole request if HyDE expansion errors — fall back to the
     // raw query. Worst case: same retrieval quality as before HyDE.
-    return "";
+    return { hypothetical: "", offtopic: false };
   }
 }
 
@@ -88,9 +110,25 @@ export async function retrieve(env: Env, query: string): Promise<RetrievedChunk[
   const options = env.GATEWAY_ID ? { gateway: { id: env.GATEWAY_ID } } : undefined;
 
   const useHyde = env.HYDE === "true" || env.HYDE === "1";
-  const hypothetical = useHyde ? await hydeExpand(env, query) : "";
-  const embedInput = hypothetical ? `${query}\n\n${hypothetical}` : query;
+  if (useHyde) {
+    const hyde = await hydeExpand(env, query);
+    if (hyde.offtopic) {
+      // Skip embed + Vectorize entirely. Empty results route into the
+      // "no relevant documentation" branch in prompt.ts, and the answer LLM
+      // refuses politely per its rule 1 / rule 5.
+      return [];
+    }
+    const embedInput = hyde.hypothetical ? `${query}\n\n${hyde.hypothetical}` : query;
+    return await embedAndQuery(env, embedInput, options);
+  }
+  return await embedAndQuery(env, query, options);
+}
 
+async function embedAndQuery(
+  env: Env,
+  embedInput: string,
+  options: { gateway: { id: string } } | undefined
+): Promise<RetrievedChunk[]> {
   // bge-base-en-v1.5 returns 768-dim vectors in `data[0]`. The model name is
   // an env var so it can be swapped (the Vectorize index dimensions must match).
   const embedded = (await env.AI.run(
