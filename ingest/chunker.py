@@ -54,8 +54,12 @@ def _count_tokens(text: str) -> int:
 
 
 def _split_long(
-    text: str, heading_path: list[str], heading: str, anchor: str | None,
-    target_tokens: int, overlap_tokens: int,
+    text: str,
+    heading_path: list[str],
+    heading: str,
+    anchor: str | None,
+    target_tokens: int,
+    overlap_tokens: int,
 ) -> list[Chunk]:
     tokens = _ENCODING.encode(text)
     if len(tokens) <= target_tokens:
@@ -136,7 +140,5 @@ def chunk_markdown(
         prefixed = f"{' > '.join(path)}\n\n{body_text}"
         if _count_tokens(prefixed) < min_tokens:
             continue
-        chunks.extend(
-            _split_long(prefixed, path, heading, anchor, target_tokens, overlap_tokens)
-        )
+        chunks.extend(_split_long(prefixed, path, heading, anchor, target_tokens, overlap_tokens))
     return chunks

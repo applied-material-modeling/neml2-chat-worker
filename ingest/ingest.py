@@ -112,7 +112,9 @@ def discover_chunks(build_dir: Path) -> list[Vector]:
             logger.debug("skip (no chunks): {}", rel)
             continue
         for i, chunk in enumerate(chunks):
-            anchor = chunk.anchor or (slugify_heading(chunk.heading) if chunk.heading != title else None)
+            anchor = chunk.anchor or (
+                slugify_heading(chunk.heading) if chunk.heading != title else None
+            )
             page_url = url_for(ref, anchor=anchor)
             vid = stable_id(rel, anchor, i)
             vectors.append(
@@ -134,7 +136,9 @@ def discover_chunks(build_dir: Path) -> list[Vector]:
     return vectors
 
 
-def embed_batch(client: httpx.Client, account_id: str, token: str, texts: list[str]) -> list[list[float]]:
+def embed_batch(
+    client: httpx.Client, account_id: str, token: str, texts: list[str]
+) -> list[list[float]]:
     url = f"{CF_API}/accounts/{account_id}/ai/run/{EMBED_MODEL}"
     resp = client.post(
         url,
@@ -148,22 +152,20 @@ def embed_batch(client: httpx.Client, account_id: str, token: str, texts: list[s
         raise RuntimeError(f"embedding failed: {payload}")
     data = payload["result"]["data"]
     if len(data) != len(texts):
-        raise RuntimeError(
-            f"embedding count mismatch: requested {len(texts)}, got {len(data)}"
-        )
+        raise RuntimeError(f"embedding count mismatch: requested {len(texts)}, got {len(data)}")
     return data
 
 
-def embed_all(
-    vectors: list[Vector], account_id: str, token: str, batch_size: int
-) -> None:
+def embed_all(vectors: list[Vector], account_id: str, token: str, batch_size: int) -> None:
     with httpx.Client() as client:
         for start in range(0, len(vectors), batch_size):
             batch = vectors[start : start + batch_size]
             texts = [v.metadata["text"] for v in batch]
-            logger.info("embedding batch {}/{}",
-                        start // batch_size + 1,
-                        (len(vectors) + batch_size - 1) // batch_size)
+            logger.info(
+                "embedding batch {}/{}",
+                start // batch_size + 1,
+                (len(vectors) + batch_size - 1) // batch_size,
+            )
             embeddings = embed_batch(client, account_id, token, texts)
             for v, emb in zip(batch, embeddings):
                 if len(emb) != EMBED_DIMS:
@@ -171,20 +173,19 @@ def embed_all(
                 v.values = emb
 
 
-def upsert_vectors(
-    vectors: list[Vector], account_id: str, token: str, batch_size: int
-) -> None:
+def upsert_vectors(vectors: list[Vector], account_id: str, token: str, batch_size: int) -> None:
     url = f"{CF_API}/accounts/{account_id}/vectorize/v2/indexes/{INDEX_NAME}/upsert"
     with httpx.Client() as client:
         for start in range(0, len(vectors), batch_size):
             batch = vectors[start : start + batch_size]
             ndjson = "\n".join(
-                json.dumps({"id": v.id, "values": v.values, "metadata": v.metadata})
-                for v in batch
+                json.dumps({"id": v.id, "values": v.values, "metadata": v.metadata}) for v in batch
             )
-            logger.info("upserting batch {}/{}",
-                        start // batch_size + 1,
-                        (len(vectors) + batch_size - 1) // batch_size)
+            logger.info(
+                "upserting batch {}/{}",
+                start // batch_size + 1,
+                (len(vectors) + batch_size - 1) // batch_size,
+            )
             resp = client.post(
                 url,
                 headers={
@@ -200,9 +201,7 @@ def upsert_vectors(
                 raise RuntimeError(f"upsert failed: {payload}")
 
 
-def delete_stale(
-    stale_ids: list[str], account_id: str, token: str
-) -> None:
+def delete_stale(stale_ids: list[str], account_id: str, token: str) -> None:
     if not stale_ids:
         return
     url = f"{CF_API}/accounts/{account_id}/vectorize/v2/indexes/{INDEX_NAME}/delete-by-ids"
@@ -241,12 +240,16 @@ def write_state(state_path: Path, ids: set[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", required=True,
-                        help="path to a neml2 doc build (must contain content/ "
-                             "produced by doc/scripts/genhtml.py)")
+    parser.add_argument(
+        "--build-dir",
+        required=True,
+        help="path to a neml2 doc build (must contain content/ "
+        "produced by doc/scripts/genhtml.py)",
+    )
     parser.add_argument("--batch-size", type=int, default=50)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="chunk + report without embedding/upserting")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="chunk + report without embedding/upserting"
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 
@@ -256,9 +259,11 @@ def main() -> None:
     build_dir = Path(args.build_dir).resolve()
 
     vectors = discover_chunks(build_dir)
-    logger.info("discovered {} chunk(s) across {} pages",
-                len(vectors),
-                len({v.metadata["source_path"] for v in vectors}))
+    logger.info(
+        "discovered {} chunk(s) across {} pages",
+        len(vectors),
+        len({v.metadata["source_path"] for v in vectors}),
+    )
 
     if args.dry_run:
         for v in vectors[:5]:

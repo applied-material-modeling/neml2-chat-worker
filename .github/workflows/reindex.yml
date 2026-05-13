@@ -31,10 +31,11 @@ jobs:
           path: neml2
           submodules: recursive
 
+      # neml2-ci is toolchain-only; we manage source checkouts ourselves
+      # (above). Mirror neml2's docs.yml versions — bump alongside that file.
       - name: Set up the neml2 toolchain (python, cmake, torch, doxygen)
         uses: applied-material-modeling/neml2-ci@main
         with:
-          # Mirror neml2's docs.yml versions; bump alongside that file.
           python-version: 3.9
           cmake-version: 3.26.1
           torch-version: 2.8.0
