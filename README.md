@@ -2,7 +2,7 @@
 
 > **Notice — not a standalone project.** This repository is a *component* of the [NEML2 project](https://github.com/applied-material-modeling/neml2) and only has meaning in that context. Public-release approval was granted for NEML2 as a whole; the code here was extracted into a separate repository for operational reasons (it runs on Cloudflare and uses a different toolchain than the rest of NEML2), not because it is an independent work. Please use, fork, cite, and report issues against this repository as part of NEML2 — not on its own.
 
-Cloudflare Worker that powers the "Ask AI" page on the [NEML2 documentation site](https://applied-material-modeling.github.io/neml2). It performs retrieval against a Vectorize index of NEML2's docs and streams an LLM response back via SSE.
+Cloudflare Worker that powers the "Chat with Docs" page on the [NEML2 documentation site](https://applied-material-modeling.github.io/neml2). It performs retrieval against a Vectorize index of NEML2's docs and streams an LLM response back via SSE.
 
 ```
 chatbot.html (in the neml2 repo's docs)
