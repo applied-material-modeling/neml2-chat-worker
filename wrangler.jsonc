@@ -21,7 +21,7 @@
     "TOP_K": "10",
     "MAX_HISTORY": "8",
     "HYDE": "true",
-    "TEMPERATURE": "0.2",
+    "TEMPERATURE": "0.1",
     "GATEWAY_ID": "neml2-docs",
     "ALLOWED_ORIGINS": "https://applied-material-modeling.github.io,http://localhost:8000,http://127.0.0.1:8000"
   }
