@@ -131,7 +131,11 @@ async function handleChat(request: Request, env: Env, origin: string): Promise<R
   const lastUser = trimmed[trimmed.length - 1].content.trim();
   if (!lastUser) return jsonError(400, "empty_query", origin);
 
-  const chunks = await retrieve(env, lastUser);
+  // Pass the full trimmed history (not just lastUser): retrieve()'s HyDE
+  // step is history-aware and will resolve follow-up references like "how
+  // about its arguments?" against earlier turns before drafting the
+  // hypothetical that anchors the embedding.
+  const chunks = await retrieve(env, trimmed);
   const { system, citations } = buildSystemMessage(chunks);
 
   // The system message is rebuilt fresh for every turn — older turns in the
